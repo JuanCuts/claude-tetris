@@ -1,0 +1,83 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      !contains(github.event.issue.body, '@claude') &&
+      !contains(github.event.issue.title, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          claude_args: '--allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*)"'
+
+          prompt: |
+            Eres el encargado de triar el issue #${{ github.event.issue.number }} de este
+            repositorio. El proyecto es un Tetris vanilla en tres archivos (`index.html`,
+            `style.css`, `game.js`), sin dependencias, sin build y sin tests — no propongas
+            infraestructura de testing, build ni empaquetado.
+
+            Pasos a seguir:
+
+            1. Lee el issue con:
+               `gh issue view ${{ github.event.issue.number }} --json title,body,labels`
+
+            2. Lista los labels disponibles con `gh label list` y elige labels **solo** de esa
+               lista. Nunca crees labels nuevos. Aplica los que correspondan con:
+               `gh issue edit ${{ github.event.issue.number }} --add-label "nombre"`
+
+            3. Antes de diagnosticar, inspecciona el código relevante con Read/Grep sobre
+               `game.js`, `index.html` y `style.css`. No asumas nada que no hayas verificado
+               leyendo el código.
+
+            4. Publica un único comentario con
+               `gh issue comment ${{ github.event.issue.number }} --body "..."` con esta
+               estructura (en español):
+
+               ## Clasificación
+               Tipo del issue y labels aplicados, con una línea de justificación.
+
+               ## Resumen
+               Qué pide o reporta el issue, en una o dos frases.
+
+               ## Causa probable
+               Con referencias concretas `archivo:línea` (por ejemplo `game.js:120`).
+
+               ## Archivos a modificar
+               Lista corta de archivos.
+
+               ## Enfoque propuesto
+               Pasos de implementación para resolverlo.
+
+               ## Criterios de aceptación
+               Verificables abriendo `index.html` en el navegador.
+
+               ## Riesgos
+               Ten en cuenta especialmente que si cambian `COLS`, `ROWS` o `BLOCK` en
+               `game.js`, hay que actualizar `width`/`height` del `<canvas id="board">` en
+               `index.html` para que sigan coincidiendo (`COLS×BLOCK`, `ROWS×BLOCK`).
+
+            5. Si el issue es demasiado vago o le falta información para diagnosticar,
+               aplica el label `question` y usa el comentario para pedir la información que
+               falta en vez de inventar un diagnóstico.
+
+            Publica como mucho un comentario nuevo por ejecución; no dupliques comentarios de
+            triage anteriores en el mismo issue.
